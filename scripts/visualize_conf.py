@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-visualize_overlap.py — 10 images × 3 overlap thresholds (0.2 / 0.3 / 0.4).
-Area threshold fixed at P90 (0.0869). Compare overlap filtering side by side.
+visualize_conf.py — 10 images × 3 confidence thresholds (0.3 / 0.4 / 0.5).
+Area=P90 fixed, overlap=0.3 fixed. Vary min confidence.
 """
 
-import os, sys, random, json
+import os, sys, random
 from pathlib import Path
 
 import cv2
@@ -13,13 +13,15 @@ from PIL import Image, ImageDraw, ImageFont
 
 os.environ["POLARS_SKIP_CPU_CHECK"] = "1"
 
-RAW = Path.home() / "data" / "raw_predictions"
-OUTPUT = Path("/mnt/d/rzuty/trening") / "overlap_review.png"
+RAW = Path.home() / "data" / "raw_predictions"         # obrazy
+FILTERED = Path.home() / "data" / "corrected_walls"    # labelki z conf
+OUTPUT = Path("/mnt/d/rzuty/trening") / "conf_review.png"
 
 N_IMAGES = 10
 MAX_WINDOW_AREA = 0.086897
-OVERLAP_THRESHOLDS = [0.2, 0.3, 0.35]
-COLS = len(OVERLAP_THRESHOLDS)
+MIN_WALL_OVERLAP = 0.3
+CONF_THRESHOLDS = [0.3, 0.4, 0.5]
+COLS = len(CONF_THRESHOLDS)
 ROWS = N_IMAGES
 CELL_W, CELL_H = 640, 640
 
@@ -34,13 +36,11 @@ def parse_label_line(line):
     cls_id = int(parts[0])
     coords = list(map(float, parts[1:]))
     conf = 0.0
-    fs = 0
     if len(coords) >= 10:
         pts = [(coords[i], coords[i + 1]) for i in range(0, 10, 2)]
-        return cls_id, pts, conf, fs
-    if len(coords) >= 6:
+        return cls_id, pts, conf
+    if len(coords) >= 5:
         conf = coords[4]
-        fs = int(coords[5]) if len(coords) >= 6 else 0
     cx, cy, w, h = coords[:4]
     pts = [
         (cx - w / 2, cy - h / 2),
@@ -49,7 +49,7 @@ def parse_label_line(line):
         (cx - w / 2, cy + h / 2),
         (cx - w / 2, cy - h / 2),
     ]
-    return cls_id, pts, conf, fs
+    return cls_id, pts, conf
 
 
 def bbox_overlap_ratio(win_bbox, wall_bboxes):
@@ -67,14 +67,16 @@ def bbox_overlap_ratio(win_bbox, wall_bboxes):
     return inter / win_area
 
 
-def filter_windows(lines, overlap_thresh, wall_bboxes):
+def filter_windows(lines, conf_thresh, wall_bboxes):
     results = []
     for line in lines:
         parsed = parse_label_line(line)
         if parsed is None:
             continue
-        cls_id, pts, conf, fs = parsed
+        cls_id, pts, conf = parsed
         if cls_id == 2:
+            if conf < conf_thresh:
+                continue
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
             w_b = max(xs) - min(xs)
@@ -88,7 +90,7 @@ def filter_windows(lines, overlap_thresh, wall_bboxes):
                 cy = (min(ys) + max(ys)) / 2
                 win_bbox = (cx - w_b/2, cy - h_b/2, cx + w_b/2, cy + h_b/2)
                 overlap = bbox_overlap_ratio(win_bbox, wall_bboxes)
-                if overlap < overlap_thresh:
+                if overlap < MIN_WALL_OVERLAP:
                     new_fs = 2
             results.append((cls_id, pts, conf, new_fs))
         else:
@@ -157,7 +159,7 @@ def create_montage():
     candidates = []
     for split in ("train", "valid", "test"):
         img_dir = RAW / split / "images"
-        lbl_dir = RAW / split / "labels"
+        lbl_dir = FILTERED / split / "labels"
         if not img_dir.is_dir():
             continue
         for img_path in sorted(img_dir.iterdir()):
@@ -175,24 +177,31 @@ def create_montage():
                     xs = [p[0] for p in parsed[1]]
                     ys = [p[1] for p in parsed[1]]
                     wall_bboxes.append((min(xs), min(ys), max(xs), max(ys)))
-            # Sprawdz czy przy overlap=0.2 jest ≥1 ov-filtered
-            has_ov = False
+            # Szukaj: box z conf w [0.3, 0.5) + filtered przy conf=0.3
+            has_mid = False
+            has_filtered_any = False
             for line in lines:
                 parsed = parse_label_line(line)
                 if parsed and parsed[0] == 2:
+                    conf = parsed[2]
+                    if conf < 0.3:
+                        continue
+                    if conf < 0.5:
+                        has_mid = True
                     pts = parsed[1]
                     xs = [p[0] for p in pts]
                     ys = [p[1] for p in pts]
                     w_b = max(xs) - min(xs)
                     h_b = max(ys) - min(ys)
-                    if w_b * h_b <= MAX_WINDOW_AREA:
+                    if w_b * h_b > MAX_WINDOW_AREA:
+                        has_filtered_any = True
+                    else:
                         cx = (min(xs) + max(xs)) / 2
                         cy = (min(ys) + max(ys)) / 2
                         win_bbox = (cx - w_b/2, cy - h_b/2, cx + w_b/2, cy + h_b/2)
-                        if bbox_overlap_ratio(win_bbox, wall_bboxes) < 0.2:
-                            has_ov = True
-                            break
-            if has_ov:
+                        if bbox_overlap_ratio(win_bbox, wall_bboxes) < MIN_WALL_OVERLAP:
+                            has_filtered_any = True
+            if has_mid and has_filtered_any:
                 candidates.append((img_path, lbl_path, lines, wall_bboxes))
 
     if not candidates:
@@ -201,7 +210,7 @@ def create_montage():
 
     random.shuffle(candidates)
     selected = candidates[:N_IMAGES]
-    print(f"  Wybrano {len(selected)} obrazow (ov>0 przy 0.2)")
+    print(f"  Wybrano {len(selected)} obrazow (filtered>0 przy conf=0.3)")
 
     total_w = COLS * CELL_W
     total_h = HEADER_H + ROWS * CELL_H + LEG_H
@@ -222,9 +231,9 @@ def create_montage():
         except:
             font = font_info = font_header = font_sm = ImageFont.load_default()
 
-    for ci, thresh in enumerate(OVERLAP_THRESHOLDS):
+    for ci, thresh in enumerate(CONF_THRESHOLDS):
         hx = ci * CELL_W + CELL_W // 2
-        text = f"overlap < {thresh}"
+        text = f"conf >= {thresh}"
         bbox = draw.textbbox((0, 0), text, font=font_header)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         draw.text((hx - tw // 2, 8), text, fill=(200, 200, 200), font=font_header)
@@ -235,7 +244,7 @@ def create_montage():
             continue
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
-        for ci, thresh in enumerate(OVERLAP_THRESHOLDS):
+        for ci, thresh in enumerate(CONF_THRESHOLDS):
             cx = ci * CELL_W
             cy = HEADER_H + ri * CELL_H
             img_pil = Image.fromarray(img_rgb.copy()).resize((CELL_W, CELL_H), Image.LANCZOS)
@@ -260,13 +269,10 @@ def create_montage():
         x += 200
 
     draw.text((20, 42),
-        f"area threshold: P90 = {MAX_WINDOW_AREA:.4f}  |  overlap thresholds: 0.2 / 0.3 / 0.4",
+        f"area: P90={MAX_WINDOW_AREA:.4f}  |  overlap: < {MIN_WALL_OVERLAP}  |  conf: 0.3 / 0.4 / 0.5",
         fill=(180, 180, 180), font=font_sm)
     draw.text((20, 64),
-        "Each row = same image  |  Each column = different overlap threshold",
-        fill=(160, 160, 160), font=font_sm)
-    draw.text((20, 86),
-        "blue = kept  |  red = AREA filter  |  orange = overlap filter",
+        "Each row = same image  |  Each column = different conf threshold",
         fill=(160, 160, 160), font=font_sm)
 
     montage.paste(leg, (0, ly))

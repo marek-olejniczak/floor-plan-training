@@ -23,7 +23,7 @@ DST = Path.home() / "data" / "raw_predictions"
 MODEL_PATH = Path.home() / "projects" / "trening" / "runs" / "doors_windows_v2" / "weights" / "best.pt"
 FALLBACK_MODEL = "yolo11s.pt"
 
-CONF_THRESH = 0.5
+CONF_THRESH = 0.3
 IOU_THRESH = 0.45
 MAX_DET = 500
 ANGLE_TOLERANCE = 2
