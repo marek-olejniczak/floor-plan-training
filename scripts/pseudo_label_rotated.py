@@ -39,6 +39,10 @@ AXES = [0.0, 90.0, 180.0]
 
 CLASS_NAMES = {0: "wall", 1: "door", 2: "window"}
 
+# Filtry fałszywych okien (Etap B)
+MAX_WINDOW_AREA = 0.356  # P95 × 1.5 z analyze_window_area.py
+MIN_WALL_OVERLAP = 0.7   # minimalny overlap pseudo-window ze ścianą
+
 
 # ============================================================
 # 1. DETEKCJA KĄTA DOMINUJĄCEGO
@@ -258,7 +262,47 @@ def format_yolo_line(cls_id, cx, cy, w, h):
 
 
 # ============================================================
-# 4. GŁÓWNA PĘTLA
+# 4. FUNKCJE POMOCNICZE (filtry)
+# ============================================================
+
+def parse_bbox_from_wall(line, img_w, img_h):
+    """Zwraca (x1, y1, x2, y2) w pikselach dla ściany (polygon lub YOLO)."""
+    parsed = parse_label_line(line)
+    if parsed is None:
+        return None
+    cls_id, pts_norm = parsed
+    if cls_id != 0:  # tylko sciany
+        return None
+    xs = [p[0] * img_w for p in pts_norm]
+    ys = [p[1] * img_h for p in pts_norm]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def bbox_overlap_ratio(win_bbox, wall_bboxes):
+    """
+    Oblicza stosunek powierzchni przecięcia window_bbox z sumą ścian
+    do powierzchni window_bbox.
+    win_bbox: (x1, y1, x2, y2)
+    wall_bboxes: lista [(x1, y1, x2, y2), ...]
+    """
+    wx1, wy1, wx2, wy2 = win_bbox
+    win_area = max(0, wx2 - wx1) * max(0, wy2 - wy1)
+    if win_area <= 0:
+        return 0.0
+
+    intersection_area = 0.0
+    for wax1, way1, wax2, way2 in wall_bboxes:
+        ix1 = max(wx1, wax1)
+        iy1 = max(wy1, way1)
+        ix2 = min(wx2, wax2)
+        iy2 = min(wy2, way2)
+        inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+        intersection_area += inter
+    return intersection_area / win_area
+
+
+# ============================================================
+# 5. GŁÓWNA PĘTLA
 # ============================================================
 
 def process_walls():
@@ -370,7 +414,16 @@ def process_walls():
                 # Zapisz obraz (zawsze jako jpg)
                 cv2.imwrite(str(out_img), current_img)
 
-                # Zapisz labele (ściany + pseudo)
+                # ---- FILTRY: area i overlap ze ścianą ----
+                wall_bboxes = []
+                for line in final_wall_lines:
+                    bbox = parse_bbox_from_wall(line, new_w, new_h)
+                    if bbox is not None:
+                        wall_bboxes.append(bbox)
+
+                filtered = {"area": 0, "overlap": 0, "kept": 0}
+
+                # Zapisz labele (ściany + pseudo z filtrami)
                 lines_out = list(final_wall_lines)
                 for result in results:
                     if result.boxes is None:
@@ -387,7 +440,27 @@ def process_walls():
                         cy = (y1 + y2) / 2
                         w_b = x2 - x1
                         h_b = y2 - y1
-                        lines_out.append(format_yolo_line(mapped_cls, cx, cy, w_b, h_b))
+
+                        # Filtruj tylko windows (cls_id=1 przed mapowaniem)
+                        if cls_id == 1:
+                            area = w_b * h_b
+                            if area > MAX_WINDOW_AREA:
+                                filtered["area"] += 1
+                                continue
+                            win_bbox = (cx - w_b/2, cy - h_b/2, cx + w_b/2, cy + h_b/2)
+                            win_bbox_px = (
+                                win_bbox[0] * new_w,
+                                win_bbox[1] * new_h,
+                                win_bbox[2] * new_w,
+                                win_bbox[3] * new_h,
+                            )
+                            overlap = bbox_overlap_ratio(win_bbox_px, wall_bboxes)
+                            if overlap < MIN_WALL_OVERLAP:
+                                filtered["overlap"] += 1
+                                continue
+
+                        lines_out.append(format_yolo_line(mapped_cls, cx, cy, w_b, h_b) + f" {conf:.4f}")
+                        filtered["kept"] += 1
 
                 out_lbl.write_text("\n".join(lines_out) + "\n")
 
@@ -401,7 +474,15 @@ def process_walls():
                     elif cls == 0:
                         stats["walls"] += 1
 
+                stats.setdefault("filtered_area", 0)
+                stats.setdefault("filtered_overlap", 0)
+                stats.setdefault("filtered_kept", 0)
+                stats["filtered_area"] += filtered["area"]
+                stats["filtered_overlap"] += filtered["overlap"]
+                stats["filtered_kept"] += filtered["kept"]
+
     # ---- PODSUMOWANIE ----
+    total_windows_before = stats["windows"] + stats.get("filtered_area", 0) + stats.get("filtered_overlap", 0)
     print(f"\n{'='*60}")
     print(f"  PODSUMOWANIE")
     print(f"  Total images:     {stats['total']}")
@@ -409,6 +490,12 @@ def process_walls():
     print(f"  Wall labels:      {stats['walls']}")
     print(f"  Door labels:      {stats['doors']}")
     print(f"  Window labels:    {stats['windows']}")
+    if stats.get("filtered_kept", 0) > 0:
+        print(f"  --- Filtry okien ---")
+        print(f"  Przed filtrem:    {total_windows_before}")
+        print(f"  Odrzucone area:   {stats.get('filtered_area', 0)}")
+        print(f"  Odrzucone overlap:{stats.get('filtered_overlap', 0)}")
+        print(f"  Zachowane:        {stats.get('filtered_kept', 0)}")
     print(f"  Output:           {DST}")
     print(f"{'='*60}")
 
@@ -423,6 +510,14 @@ def process_walls():
                 "walls": stats["walls"],
                 "doors": stats["doors"],
                 "windows": stats["windows"],
+            },
+            "filters": {
+                "MAX_WINDOW_AREA": MAX_WINDOW_AREA,
+                "MIN_WALL_OVERLAP": MIN_WALL_OVERLAP,
+                "filtered_area": stats.get("filtered_area", 0),
+                "filtered_overlap": stats.get("filtered_overlap", 0),
+                "filtered_kept": stats.get("filtered_kept", 0),
+                "windows_before_filter": total_windows_before,
             }
         }, f, indent=2)
     print(f"  Metadane: {meta_path}")

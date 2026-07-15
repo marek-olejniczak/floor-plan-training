@@ -35,14 +35,21 @@ def parse_label_line(line):
         return None
     cls_id = int(parts[0])
     coords = list(map(float, parts[1:]))
+    conf = None
     if len(coords) >= 10:
         pts = [(coords[i], coords[i + 1]) for i in range(0, 10, 2)]
-        return cls_id, pts
-    cx, cy, w, h = coords[:4]
-    pts = [(cx - w / 2, cy - h / 2), (cx + w / 2, cy - h / 2),
-           (cx + w / 2, cy + h / 2), (cx - w / 2, cy + h / 2),
-           (cx - w / 2, cy - h / 2)]
-    return cls_id, pts
+    elif len(coords) == 5:
+        conf = coords[4]
+        cx, cy, w, h = coords[:4]
+        pts = [(cx - w / 2, cy - h / 2), (cx + w / 2, cy - h / 2),
+               (cx + w / 2, cy + h / 2), (cx - w / 2, cy + h / 2),
+               (cx - w / 2, cy - h / 2)]
+    else:
+        cx, cy, w, h = coords[:4]
+        pts = [(cx - w / 2, cy - h / 2), (cx + w / 2, cy - h / 2),
+               (cx + w / 2, cy + h / 2), (cx - w / 2, cy + h / 2),
+               (cx - w / 2, cy - h / 2)]
+    return cls_id, pts, conf
 
 
 def draw_annotations(img_pil, label_lines, img_w, img_h):
@@ -61,9 +68,11 @@ def draw_annotations(img_pil, label_lines, img_w, img_h):
         parsed = parse_label_line(line)
         if parsed is None:
             continue
-        cls_id, pts_norm = parsed
+        cls_id, pts_norm, conf = parsed
         color = CLASS_COLORS.get(cls_id, (255, 255, 0))
         label = CLASS_LABELS.get(cls_id, str(cls_id))
+        if conf is not None and cls_id in (1, 2):
+            label += f" {conf:.2f}"
 
         pts = [(int(x * img_w), int(y * img_h)) for x, y in pts_norm]
         thickness = 3
@@ -200,7 +209,7 @@ def create_montage():
     draw.rectangle([x, 10, x + 20, 40], fill=(20, 40, 20))
     draw.text((x + 26, 12), "= axis-aligned", fill=(255, 255, 255), font=font_small)
 
-    draw.text((20, 52), f"Total: {len(all_entries)} img | Pokazano: {len(selected)} ({n_rot_selected} rotated)",
+    draw.text((20, 52), f"Total: {len(all_entries)} img | Pokazano: {len(selected)} ({n_rot_selected} rotated) | conf score na door/window",
               fill=(200, 200, 200), font=font_small)
 
     final = Image.new("RGB", (GRID_COLS * CELL_W, GRID_ROWS * CELL_H + 90), (30, 30, 30))
