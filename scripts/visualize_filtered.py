@@ -57,6 +57,7 @@ def create_montage():
     cfg = meta.get("config", {})
 
     candidates = []
+    candidates_area = []
     for split in ("train", "valid", "test"):
         img_dir = RAW / split / "images"
         lbl_dir = FILTERED / split / "labels"
@@ -68,31 +69,41 @@ def create_montage():
             lbl_path = lbl_dir / (img_path.stem + ".txt")
             if not lbl_path.exists():
                 continue
-            n_removed = 0
-            n_kept = 0
+            n_kept = n_area = n_overlap = 0
             with open(lbl_path) as f:
                 for line in f:
                     parts = line.strip().split()
                     if len(parts) >= 7 and parts[0] == "2":
                         fs = int(parts[6])
-                        if fs != 0:
-                            n_removed += 1
+                        if fs == 1:
+                            n_area += 1
+                        elif fs == 2:
+                            n_overlap += 1
                         else:
                             n_kept += 1
-            if n_removed > 0:
-                candidates.append((img_path, lbl_path, n_kept, n_removed))
+            if n_area > 0:
+                candidates_area.append((img_path, lbl_path, n_kept, n_area + n_overlap, n_area, n_overlap))
+            elif n_overlap > 0:
+                candidates.append((img_path, lbl_path, n_kept, n_overlap, 0, n_overlap))
 
-    if not candidates:
-        print("[BLAD] Brak obrazow!")
-        return
+    print(f"  Obrazy z area>0: {len(candidates_area)}, z overlap>0: {len(candidates)}")
 
-    random.shuffle(candidates)
-    selected = candidates[:N_EXAMPLES]
+    if not candidates_area:
+        print("[BLAD] Brak obrazow z area-filter!")
+        if not candidates:
+            print("[BLAD] Brak obrazow z overlap-filter!")
+            return
+        selected = random.sample(candidates, min(N_EXAMPLES, len(candidates)))
+    else:
+        selected = random.sample(candidates_area, min(N_EXAMPLES, len(candidates_area)))
+
     print(f"  Wybrano {len(selected)} przykladow")
+    for i, (_, _, nk, nr, na, no) in enumerate(selected):
+        print(f"    [{i}] kept={nk} area={na} overlap={no}")
 
     montage = Image.new("RGB", (GRID_COLS * CELL_W, GRID_ROWS * CELL_H), (30, 30, 30))
 
-    for idx, (img_path, lbl_path, n_kept, n_removed) in enumerate(selected):
+    for idx, (img_path, lbl_path, n_kept, n_removed, n_area, n_overlap) in enumerate(selected):
         row, col = divmod(idx, GRID_COLS)
         cx, cy = col * CELL_W, row * CELL_H
 
@@ -145,13 +156,16 @@ def create_montage():
                         draw.line([pts[i], pts[i + 1]], fill=color, width=thickness)
                 else:
                     if fs == 1:
-                        color = (220, 20, 20)
-                        text = "area"
-                        fill_rgba = (220, 20, 20, 50)
+                        color = (255, 0, 0)
+                        text = "AREA"
+                        fill_rgba = (255, 0, 0, 80)
+                        # Dodatkowy znacznik — czerwone X w rogu obrazka
+                        draw.line([(5, 5), (40, 40)], fill=(255, 0, 0), width=6)
+                        draw.line([(5, 40), (40, 5)], fill=(255, 0, 0), width=6)
                     else:
                         color = (255, 120, 40)
                         text = "ov"
-                        fill_rgba = (255, 120, 40, 50)
+                        fill_rgba = (255, 120, 40, 80)
                     thickness = 6
                     overlay_draw.polygon(pts + [pts[0]], fill=fill_rgba)
                     for i in range(len(pts) - 1):
@@ -166,7 +180,7 @@ def create_montage():
         img_pil = Image.alpha_composite(img_pil.convert("RGBA"), overlay).convert("RGB")
         draw = ImageDraw.Draw(img_pil)
 
-        info = f"kept:{n_kept}  removed:{n_removed}"
+        info = f"kept:{n_kept}  area:{n_area}  overlap:{n_overlap}"
         bg = (80, 20, 20)
         bbox = draw.textbbox((0, 0), info, font=font_info)
         iw, ih = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -184,10 +198,10 @@ def create_montage():
         font_sm = ImageFont.load_default()
 
     legend = [
-        ((0, 140, 255), "kept (blue outline, conf)"),
-        ((220, 20, 20), "removed area (red fill + thick outline)"),
-        ((255, 120, 40), "removed overlap (orange fill + thick outline)"),
-        ((80, 80, 80), "walls/doors (gray, context)"),
+        ((0, 140, 255), "kept (blue, conf)"),
+        ((255, 0, 0), "removed AREA (bright red fill)"),
+        ((255, 120, 40), "removed overlap (orange fill)"),
+        ((80, 80, 80), "walls/doors (gray context)"),
     ]
     x = 20
     for color, label in legend:

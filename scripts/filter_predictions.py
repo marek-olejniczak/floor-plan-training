@@ -17,7 +17,7 @@ DST = Path.home() / "data" / "corrected_walls"
 DECISIONS_PATH = DST / "filter_decisions.json"
 
 MAX_WINDOW_AREA = 0.087   # P90 z analyze_window_area.py
-MIN_WALL_OVERLAP = 0.5
+MIN_WALL_OVERLAP = 0.3
 
 SPLITS = ["train", "valid", "test"]
 
