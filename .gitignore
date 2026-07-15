@@ -1,0 +1,10 @@
+.venv/
+.venv_old/
+runs/
+__pycache__/
+*.pyc
+.DS_Store
+thumbs.db
+datasetYOLOv8obb/
+merged_dataset/
+*.Zone.Identifier

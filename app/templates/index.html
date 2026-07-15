@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detekcja ścian — YOLO OBB</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Detekcja ścian z rzutów</h1>
+    <p class="subtitle">YOLO11s-OBB — przeciągnij zdjęcie rzutu architektonicznego</p>
+  </header>
+
+  <div class="drop-zone" id="dropZone">
+    <span class="drop-hint">Przeciągnij plik tutaj lub kliknij aby wybrać</span>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+  </div>
+
+  <div class="controls" id="controls" hidden>
+    <div class="control-row">
+      <label for="confSlider">Próg ufności: <span id="confValue">0.25</span></label>
+      <input type="range" id="confSlider" min="0.05" max="0.95" step="0.05" value="0.25">
+    </div>
+    <div class="stats" id="stats">
+      <span>Wykryte ściany: <strong id="wallCount">0</strong></span>
+      <span>Śr. ufność: <strong id="avgConf">—</strong></span>
+    </div>
+  </div>
+
+  <div class="canvas-wrapper" id="canvasWrapper" hidden>
+    <div class="canvas-container">
+      <img id="sourceImage" style="display:none">
+      <canvas id="mainCanvas"></canvas>
+    </div>
+  </div>
+
+  <div class="loading" id="loading" hidden>
+    <div class="spinner"></div>
+    <span>Analizowanie...</span>
+  </div>
+
+  <div class="error" id="error" hidden></div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const canvasWrapper = document.getElementById('canvasWrapper');
+const mainCanvas = document.getElementById('mainCanvas');
+const sourceImage = document.getElementById('sourceImage');
+const loading = document.getElementById('loading');
+const error = document.getElementById('error');
+const controls = document.getElementById('controls');
+const confSlider = document.getElementById('confSlider');
+const confValue = document.getElementById('confValue');
+const wallCount = document.getElementById('wallCount');
+const avgConf = document.getElementById('avgConf');
+
+let rawDetections = [];
+let currentImageData = null;
+
+// --- Drag & Drop ---
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
+
+// --- Obsluga pliku ---
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) {
+    showError('Wybierz plik graficzny (JPG, PNG)');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    currentImageData = e.target.result;
+    sourceImage.onload = function() {
+      drawImageOnCanvas(sourceImage);
+      sendPrediction(currentImageData);
+    };
+    sourceImage.src = currentImageData;
+  };
+  reader.readAsDataURL(file);
+}
+
+function drawImageOnCanvas(img) {
+  const maxW = Math.min(img.naturalWidth, 1400);
+  const maxH = Math.min(img.naturalHeight, 900);
+  mainCanvas.width = maxW;
+  mainCanvas.height = maxH;
+  const ctx = mainCanvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, maxW, maxH);
+  canvasWrapper.hidden = false;
+}
+
+// --- Wysylanie do backendu ---
+async function sendPrediction(imageData) {
+  loading.hidden = false;
+  error.hidden = true;
+  controls.hidden = true;
+
+  try {
+    const blob = await (await fetch(imageData)).blob();
+    const formData = new FormData();
+    formData.append('file', blob, 'rzut.jpg');
+
+    const resp = await fetch('/predict', { method: 'POST', body: formData });
+    const data = await resp.json();
+
+    if (data.error) {
+      showError(data.error);
+      return;
+    }
+
+    rawDetections = data.detections;
+    controls.hidden = false;
+    updateStats();
+    drawDetections(parseFloat(confSlider.value));
+  } catch (err) {
+    showError('Blad polaczenia z serwerem: ' + err.message);
+  } finally {
+    loading.hidden = true;
+  }
+}
+
+// --- Rysowanie OBB na Canvasie ---
+function drawDetections(threshold) {
+  const ctx = mainCanvas.getContext('2d');
+  const img = sourceImage;
+  const scaleX = mainCanvas.width / img.naturalWidth;
+  const scaleY = mainCanvas.height / img.naturalHeight;
+
+  ctx.clearRect(0, 0, mainCanvas.width, mainCanvas.height);
+  ctx.drawImage(img, 0, 0, mainCanvas.width, mainCanvas.height);
+
+  const filtered = rawDetections.filter(d => d.confidence >= threshold);
+
+  for (const det of filtered) {
+    const verts = det.vertices.map(v => [
+      v[0] * scaleX,
+      v[1] * scaleY,
+    ]);
+
+    ctx.beginPath();
+    ctx.moveTo(verts[0][0], verts[0][1]);
+    for (let i = 1; i < verts.length; i++) {
+      ctx.lineTo(verts[i][0], verts[i][1]);
+    }
+    ctx.closePath();
+
+    ctx.fillStyle = 'rgba(46, 204, 113, 0.25)';
+    ctx.fill();
+    ctx.strokeStyle = '#2ecc71';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Etykieta z confidence
+    const cx = verts.reduce((s, v) => s + v[0], 0) / verts.length;
+    const cy = verts.reduce((s, v) => s + v[1], 0) / verts.length;
+    const label = `${(det.confidence * 100).toFixed(0)}%`;
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    const tw = ctx.measureText(label).width;
+    ctx.fillRect(cx - tw/2 - 4, cy - 11, tw + 8, 20);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, cx, cy + 1);
+  }
+
+  wallCount.textContent = filtered.length;
+}
+
+// --- Statystyki ---
+function updateStats() {
+  const confs = rawDetections.map(d => d.confidence);
+  avgConf.textContent = confs.length
+    ? (confs.reduce((a, b) => a + b, 0) / confs.length * 100).toFixed(1) + '%'
+    : '—';
+}
+
+// --- Suwak confidence ---
+confSlider.addEventListener('input', function() {
+  confValue.textContent = parseFloat(this.value).toFixed(2);
+  if (rawDetections.length) drawDetections(parseFloat(this.value));
+});
+
+// --- Obsluga bledow ---
+function showError(msg) {
+  error.textContent = msg;
+  error.hidden = false;
+  loading.hidden = true;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+[project]
+name = "trening"
+version = "0.1.0"
+description = "YOLO detection training for floor plan elements"
+requires-python = ">=3.11"
+dependencies = [
+    "ultralytics>=8.3",
+    "numpy<2.0",
+    "opencv-python-headless<5.0",
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+python-preference = "system"
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
