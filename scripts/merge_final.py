@@ -11,7 +11,7 @@ from pathlib import Path
 sys.stdout.reconfigure(line_buffering=True)
 
 # --- Sources ---
-PSEUDO = Path.home() / "data" / "pseudo_labeled_walls"    # d1, d2 subdirs
+PSEUDO = Path.home() / "data" / "corrected_walls"         # flat (train/valid/test), filenames have d1_/d2_ prefix
 WDW = Path("/mnt/d/rzuty/dane/yolo11datasets/walls_doors_windows")  # d1, d2 subdirs
 DST = Path.home() / "data" / "combined_dataset"
 
@@ -77,25 +77,20 @@ def main():
 
     totals = {"images": 0, 0: 0, 1: 0, 2: 0}
 
-    # --- 1. Pseudo-labeled walls ---
-    print("\n--- Pseudo-labeled walls ---")
-    for ds_dir in sorted(PSEUDO.iterdir()):
-        if not ds_dir.is_dir():
-            continue
-        prefix = f"pseudo_{ds_dir.name}"
-        print(f"  {ds_dir.name}:")
-        for split in SPLITS:
-            n, cc = copy_images_labels(ds_dir / split, DST / split, prefix, class_map=None)
-            totals["images"] += n
-            for k, v in cc.items():
-                totals[k] = totals.get(k, 0) + v
-            if n:
-                print(f"    {split}: {n} img, classes={dict(cc)}")
+    # --- 1. Pseudo-labeled walls (corrected_walls, flat structure) ---
+    print("\n--- Corrected walls (pseudo-labeled, flat) ---")
+    for split in SPLITS:
+        n, cc = copy_images_labels(PSEUDO / split, DST / split, "pseudo", class_map=None)
+        totals["images"] += n
+        for k, v in cc.items():
+            totals[k] = totals.get(k, 0) + v
+        if n:
+            print(f"    {split}: {n} img, classes={dict(cc)}")
 
     # --- 2. Walls-doors-windows (remapped) ---
     print("\n--- Walls+Doors+Windows (ground truth, remapped) ---")
     for ds_dir in sorted(WDW.iterdir()):
-        if not ds_dir.is_dir():
+        if not ds_dir.is_dir() or not ds_dir.name.startswith("d"):
             continue
         prefix = f"wdw_{ds_dir.name}"
         print(f"  {ds_dir.name}:")

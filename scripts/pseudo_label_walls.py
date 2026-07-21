@@ -13,7 +13,7 @@ from pathlib import Path
 from ultralytics import YOLO
 
 # --- Config ---
-MODEL_PATH = Path.home() / "projects" / "trening" / "runs" / "doors_windows_v1" / "weights" / "best.pt"
+MODEL_PATH = Path.home() / "projects" / "trening" / "runs" / "doors_windows_v2" / "weights" / "best.pt"
 WALLS_SRC = Path("/mnt/d/rzuty/dane/yolo11datasets/walls")
 OUTPUT = Path.home() / "data" / "pseudo_labeled_walls"
 CONF_THRESHOLD = 0.5
@@ -85,8 +85,9 @@ def main():
 
                     pseudo_lines = list(batch_wall_lines[img_path.name])
                     if result.boxes is not None:
-                        for box, cls_id in zip(result.boxes.xywhn, result.boxes.cls):
+                        for box, cls_id, conf in zip(result.boxes.xywhn, result.boxes.cls, result.boxes.conf):
                             cls_id = int(cls_id)
+                            conf = float(conf)
                             if cls_id == 0:
                                 target_class = DOOR_CLASS
                                 total_pseudo_door += 1
@@ -96,7 +97,7 @@ def main():
                             else:
                                 continue
                             cx, cy, w, h = box.tolist()
-                            pseudo_lines.append(f"{target_class} {cx:.10f} {cy:.10f} {w:.10f} {h:.10f}")
+                            pseudo_lines.append(f"{target_class} {cx:.10f} {cy:.10f} {w:.10f} {h:.10f} {conf:.4f}")
 
                     # Write combined labels
                     dst_lbl = dst_lbl_dir / (img_path.stem + ".txt")

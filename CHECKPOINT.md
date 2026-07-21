@@ -1,5 +1,5 @@
 # Checkpoint — trening YOLO floor plan detection
-> 21.07.2026 — Po oczyszczeniu d1 (CubiCasa)
+> 21.07.2026 — Full pipeline odświeżony, gotowy do treningu
 
 ## Ustawione progi (finalne)
 | Filtr | Threshold | Opis |
@@ -10,10 +10,13 @@
 | Door-win IoU | > 0.2 | Okno nakladajace sie na drzwi → usun |
 | Door dedup | cover ≥ 0.9 | Z dwoch identycznych drzwi → mniejsze wygrywa |
 
-## Pipeline
+## Pipeline (obecny — bez rotacji)
 ```
-predict_walls.py   → raw_predictions/     (12 687 img, 94 956 okien, 119 393 drzwi)
-filter_predictions.py → corrected_walls/  (80 314 drzwi, 46 668 okien po conf=0.4)
+pseudo_label_walls.py          → pseudo_labeled_walls/  (12 687 img, walls + pseudo DW)
+flatten_pseudo.py               → raw_predictions/       (flat structure, d1_/d2_ prefix)
+filter_predictions.py           → corrected_walls/       (105 946 kept obiektów)
+merge_final.py                  → combined_dataset/      (18 662 img, 489k scian, 133k drzwi, 78k okien)
+train_final.py                  → runs/final_v1/         (YOLO11s, 50 epoch, 1024px, W&B optional)
 ```
 
 ## Oczyszczenie d1 (CubiCasa) — okna
@@ -27,37 +30,45 @@ Niektóre balkony/tarasy w d1 były oznaczone w całości jako okno (class 2). F
 
 Skrypt: `filter_d1_windows.py --threshold 0.0201 --max-aspect 4.5`
 
-## Wyniki filtracji (ostatni run)
-- Low conf (<0.4): 87 367
-- Area: 0
-- Overlap: 2 037
-- By door: 147
-- Door dup: 454
-- Kept: 124 360
+## Wyniki pseudo-labelingu + filtracji (ostatni run)
+```
+pseudo_label_walls.py:
+  Obrazy:        12 687 (d1: 6041, d2: 6646)
+  Drzwi:         76 272
+  Okna:          31 545
+
+filter_predictions.py (conf=0.4, area=P90, overlap=0.3, door_iou=0.2, dedup=0.9):
+  Sciany:        320 148 (bez filtracji)
+  Drzwi+okna:    107 817 → 105 946 kept (1 928 usunięte)
+  Low conf:      0 (wszystkie >= 0.4 z modelu)
+  Area:          0
+  Overlap:       924
+  By door:       22
+  Door dup:      982
+```
+
+## merged dataset
+| Split | Images | Wall | Door | Window |
+|-------|-------:|-----:|-----:|-------:|
+| train | 13 963 | 357 762 | 98 702 | 57 560 |
+| valid | 3 255 | 79 189 | 20 471 | 11 427 |
+| test | 1 444 | 48 380 | 12 505 | 9 155 |
+| **Total** | **18 662** | **489 063** | **133 678** | **78 142** |
 
 ## Struktura projektu (scripts/)
 | Skrypt | Rola |
 |---|---|
-| `predict_walls.py` | Inferencja YOLO + rotacja → raw predictions |
-| `filter_predictions.py` | Filtrowanie (conf/area/overlap/door/dedup) → cleaned dataset |
-| `train_doors_windows.py` | Trening modelu YOLO |
-| `merge_doors_windows.py` | Scalanie d1+d2+d3 |
-| `analyze_d1_windows.py` | Analiza rozkładu powierzchni okien w d1 |
+| `pseudo_label_walls.py` | Pseudo-labeling drzwi/okien na walls d1+d2 (z conf) |
+| `flatten_pseudo.py` | Spłaszczenie d1/d2 w jeden katalog raw_predictions/ |
+| `filter_predictions.py` | Filtracja (conf/area/overlap/door/dedup) |
+| `merge_final.py` | Merge corrected_walls + walls_doors_windows → combined |
+| `train_final.py` | Trening YOLO11s (3 klasy) z opcjonalnym W&B |
+| `train_doors_windows.py` | Trening modelu DW (do pseudo-labelingu) |
 | `filter_d1_windows.py` | Filtracja okien d1 po area + aspect ratio |
-| `visualize_dataset.py` | Siatka 16 obrazów z adnotacjami (sciany jako poligony/bbox) |
-| `visualize_dataset_aabb.py` | Siatka 16 obrazów, sciany jako AABB |
-
-## Wizualizacje (do przegladu)
-- `threshold_review.png` — area P85/P90/P95
-- `overlap_review.png` — overlap 0.2/0.3/0.35
-- `conf_review.png` — conf 0.3/0.4/0.5 dla okien
-- `doors_review.png` — conf 0.3/0.4/0.5 dla drzwi + door/dup
-- `dataset_review.png` — przegląd corrected_walls z polygonami scian
-- `dataset_review_aabb.png` — jw. ale sciany jako AABB
-- `d1_window_filter_thr=0_0201_ar4.5.png` — efekt filtracji okien d1
+| `analyze_d1_windows.py` | Analiza rozkładu powierzchni okien w d1 |
+| `merge_doors_windows.py` | Scalanie d1+d2+d3 dla DW |
 
 ## Etap C — do zrobienia
-1. Merge: corrected_walls + walls_doors_windows → combined_dataset
-2. Merge: merged_doors_windows jako dodatkowe door+window
-3. Generacja data.yaml (3 klasy: 0=wall, 1=door, 2=window)
-4. Finalny trening YOLO11s (50 epoch, 1024px, batch 16)
+1. Odpalić `train_final.py` (50 epoch, 1024px, batch 16)
+2. Ewaluacja modelu na zbiorze testowym
+3. (opcjonalnie) Trening porównawczy na samym walls_doors_windows

@@ -4,6 +4,7 @@ train_final.py — Finalny trening YOLO11s na 3 klasach (wall, door, window).
 """
 import os
 os.environ["POLARS_SKIP_CPU_CHECK"] = "1"
+os.environ["WANDB_SILENT"] = "true"
 
 from pathlib import Path
 from ultralytics import YOLO
@@ -40,6 +41,17 @@ def main():
         return
 
     model = YOLO("yolo11s.pt")
+
+    # W&B — tylko jeśli klucz API dostępny
+    if "WANDB_API_KEY" in os.environ:
+        try:
+            import wandb
+            wandb.init(project="floor-plan-detection", name=RUN_NAME)
+            print(f"[W&B] Logging enabled: floor-plan-detection/{RUN_NAME}")
+        except ImportError:
+            print("[W&B] wandb not installed, skipping")
+    else:
+        print("[W&B] WANDB_API_KEY not set, skipping")
 
     model.train(
         data=str(DATA),
