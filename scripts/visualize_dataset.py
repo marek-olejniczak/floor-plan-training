@@ -52,6 +52,15 @@ for idx, lp in enumerate(sel):
                 pts = [(int(cs[i] * CW + ox), int(cs[i + 1] * CH + oy)) for i in range(0, 10, 2)]
                 dw.polygon(pts, outline=(0, 200, 0), width=2)
 
+            elif cid == 0 and len(p) == 5:
+                _, cx, cy, w, h = p
+                cx, cy, w, h = map(float, (cx, cy, w, h))
+                x1 = int((cx - w / 2) * CW + ox)
+                y1 = int((cy - h / 2) * CH + oy)
+                x2 = int((cx + w / 2) * CW + ox)
+                y2 = int((cy + h / 2) * CH + oy)
+                dw.rectangle([x1, y1, x2, y2], outline=(0, 200, 0), width=2)
+
             elif cid in (1, 2) and len(p) >= 7:
                 _, cx, cy, w, h, conf = p[:6]
                 cx, cy, w, h, conf = map(float, (cx, cy, w, h, conf))
