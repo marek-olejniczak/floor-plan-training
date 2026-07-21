@@ -2,8 +2,6 @@
 """filter_d1_windows.py — filter oversized windows in d1 by area percentile/threshold."""
 
 import argparse
-import shutil
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -84,24 +82,25 @@ def draw_bbox(dw, parts, ox, oy, cw, ch, highlight_removed=False):
 
 
 def make_visualization(examples, threshold, label):
-    """examples: list of (stem, removed_count, original_lines, filtered_lines)"""
+    """examples: list of (stem, n_removed, max_area, areas, orig_lines, filt_lines) sorted by max_area ascending"""
     n = len(examples)
     rows = n
     img_w = CELL * 2 + 20  # before + after + gap
-    img_h = rows * (CELL + 40) + 60  # +40 per row for text, +60 top header
+    img_h = rows * (CELL + 48) + 60  # +48 per row for text, +60 top header
 
     canvas = Image.new("RGB", (img_w, img_h), (30, 30, 30))
     dw = ImageDraw.Draw(canvas)
 
     fnt = ImageFont.truetype(FONT, 20) if Path(FONT).exists() else None
     sf = ImageFont.truetype(FONT, 13) if fnt else None
+    tf = ImageFont.truetype(FONT, 12) if fnt else None
 
     dw.text((10, 8),
-            f"d1 window filter — threshold={threshold:.5f} ({label}) | before (left) vs after (right)",
+            f"d1 window filter — threshold={threshold:.5f} ({label}) | before (left) vs after (right) | sorted by max removed area ascending",
             font=fnt, fill=(200, 200, 200))
 
-    for i, (stem, rem, orig_lines, filt_lines) in enumerate(examples):
-        y0 = i * (CELL + 40) + 60
+    for i, (stem, n_removed, max_area, areas, orig_lines, filt_lines) in enumerate(examples):
+        y0 = i * (CELL + 48) + 60
         ip = D1 / "train" / "images" / f"{stem}.jpg"
         try:
             img = Image.open(ip).convert("RGB").resize((CELL, CELL), Image.LANCZOS)
@@ -113,22 +112,22 @@ def make_visualization(examples, threshold, label):
         dw2 = ImageDraw.Draw(canvas)
 
         # Identify removed window lines for highlighting
-        removed_lines = []
-        kept_lines = []
+        removed_parts = []
+        kept_parts = []
         for line in orig_lines:
             parts = line.strip().split()
             if len(parts) >= 5 and parts[0] == "2":
                 a = float(parts[3]) * float(parts[4])
                 if a > threshold:
-                    removed_lines.append(parts)
+                    removed_parts.append((a, parts))
                     continue
-            kept_lines.append(parts)
+            kept_parts.append(parts)
 
         # Draw kept in normal colors
-        for parts in kept_lines:
+        for parts in kept_parts:
             draw_bbox(dw2, parts, 10, y0, CELL, CELL)
-        # Draw removed in red (thick)
-        for parts in removed_lines:
+        # Draw removed in red (thick) with area label
+        for a, parts in removed_parts:
             draw_bbox(dw2, parts, 10, y0, CELL, CELL, highlight_removed=True)
 
         # After panel
@@ -140,7 +139,10 @@ def make_visualization(examples, threshold, label):
                 draw_bbox(dw3, parts, CELL + 20, y0, CELL, CELL)
 
         # Label row
-        label_text = f"{stem[:50]}  |  removed={rem}"
+        area_str = ", ".join(f"{a:.5f}" for a in sorted(areas, reverse=True)[:3])
+        if len(areas) > 3:
+            area_str += f" ... +{len(areas)-3}"
+        label_text = f"{stem[:45]}  |  removed={n_removed}  |  areas=[{area_str}]"
         bb = dw.textbbox((10, y0 + CELL + 2), label_text, font=sf)
         dw.rectangle(bb, fill=(0, 0, 0, 180))
         dw.text((10, y0 + CELL + 2), label_text, font=sf, fill=(200, 200, 200))
@@ -188,6 +190,15 @@ def main():
             orig_lines = open(f).readlines()
             n_before = count_windows(f)
 
+            # Collect areas of all windows that will be removed
+            removed_areas = []
+            for line in orig_lines:
+                parts = line.strip().split()
+                if len(parts) >= 5 and parts[0] == "2":
+                    a = float(parts[3]) * float(parts[4])
+                    if a > threshold:
+                        removed_areas.append(a)
+
             filter_labels(f, dst / f.name, threshold)
 
             n_after = count_windows(dst / f.name)
@@ -200,9 +211,11 @@ def main():
             split_after += n_after
             split_removed += n_removed
 
-            if n_removed > 0 and len(examples) < 16 and split == "train":
+            if n_removed > 0 and split == "train":
                 filt_lines = open(dst / f.name).readlines()
-                examples.append((stem, n_removed, orig_lines, filt_lines))
+                max_area = max(removed_areas)
+                examples.append((stem, n_removed, max_area, removed_areas,
+                                 orig_lines, filt_lines))
 
         print(f"  {split:>6s}: {split_before:>6d} → {split_after:>6d}  (removed {split_removed:>5d})")
 
@@ -211,9 +224,10 @@ def main():
     # --- Visualization ---
     out_png = OUT_PNG / f"d1_window_filter_{label.replace('.', '_')}.png"
     if examples:
-        cv = make_visualization(examples, threshold, label)
+        examples.sort(key=lambda x: x[2])  # sort by max_area ascending
+        cv = make_visualization(examples[:16], threshold, label)
         cv.save(out_png)
-        print(f"  Saved: {out_png}  ({len(examples)} examples)")
+        print(f"  Saved: {out_png}  ({min(16, len(examples))} examples)")
     else:
         print("  No windows removed — no visualization generated.")
 
