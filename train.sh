@@ -9,5 +9,5 @@ export VECLIB_MAXIMUM_THREADS=1
 export NUMEXPR_NUM_THREADS=1
 cd ~/projects/trening
 source .venv/bin/activate
-echo 'Wszystkie wyniki trafia do: ~/projects/trening/runs/'
+echo 'Wszystkie wyniki trafiaja do: ~/projects/trening/runs/'
 exec python scripts/train_full.py
