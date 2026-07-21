@@ -1,0 +1,37 @@
+{
+  "os":  "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "python":  "CPython 3.11.15",
+  "startedAt":  "2026-07-21T14:40:24.440664Z",
+  "program":  "/home/marek_olejniczak/projects/trening/scripts/train_final.py",
+  "codePath":  "scripts/train_final.py",
+  "codePathLocal":  "scripts/train_final.py",
+  "git":  {
+    "commit":  "1b01e6577b41f07c7d2976ae4426d286d83c9a3a"
+  },
+  "root":  "/home/marek_olejniczak/projects/trening",
+  "host":  "ID39",
+  "executable":  "/home/marek_olejniczak/projects/trening/.venv/bin/python3",
+  "cpu_count":  12,
+  "cpu_count_logical":  24,
+  "gpu":  "NVIDIA GeForce RTX 4070 Ti SUPER",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "1081101176832",
+      "used":  "92787294208"
+    }
+  },
+  "memory":  {
+    "total":  "16766386176"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 4070 Ti SUPER",
+      "memoryTotal":  "17171480576",
+      "architecture":  "Ada",
+      "uuid":  "GPU-e356c3f6-2342-fcd9-07f3-2a9c9caf896c"
+    }
+  ],
+  "cudaVersion":  "13.3",
+  "writerId":  "ol78u0wvquy7l5wk6id5vaxr9lc4zeu7"
+}

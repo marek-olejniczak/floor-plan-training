@@ -3,10 +3,21 @@
 train_final.py — Finalny trening YOLO11s na 3 klasach (wall, door, window).
 """
 import os
+from pathlib import Path
+
 os.environ["POLARS_SKIP_CPU_CHECK"] = "1"
 os.environ["WANDB_SILENT"] = "true"
 
-from pathlib import Path
+# Load .env file manually
+_env_path = Path(__file__).resolve().parent.parent / ".env"
+if _env_path.exists():
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 from ultralytics import YOLO
 
 DATA = Path.home() / "data" / "combined_dataset" / "data.yaml"

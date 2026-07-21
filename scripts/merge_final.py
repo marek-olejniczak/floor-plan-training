@@ -21,8 +21,39 @@ SPLITS = ["train", "valid", "test"]
 WDW_CLASS_MAP = {0: 1, 1: 0, 2: 2}
 
 
+def to_bbox_line(line, class_map=None):
+    """Convert any label line to 5-field YOLO bbox format: cls cx cy w h."""
+    parts = line.strip().split()
+    if len(parts) < 5:
+        return None
+    cls_id = int(parts[0])
+    if class_map is not None:
+        if cls_id not in class_map:
+            return None
+        cls_id = class_map[cls_id]
+    coords = list(map(float, parts[1:]))
+
+    if len(coords) == 4:
+        cx, cy, w, h = coords
+    elif len(coords) >= 10:
+        xs = [coords[i] for i in range(0, 10, 2)]
+        ys = [coords[i + 1] for i in range(0, 10, 2)]
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+        cx = (xmin + xmax) / 2
+        cy = (ymin + ymax) / 2
+        w = xmax - xmin
+        h = ymax - ymin
+    else:
+        cx, cy, w, h = coords[:4]
+
+    w = max(w, 1e-10)
+    h = max(h, 1e-10)
+    return f"{cls_id} {cx:.10f} {cy:.10f} {w:.10f} {h:.10f}"
+
+
 def copy_images_labels(src_dir, dst_dir, prefix, class_map=None):
-    """Copy images and labels with optional class remapping."""
+    """Copy images and labels, convert all labels to 5-field YOLO bbox."""
     img_dir = src_dir / "images"
     lbl_dir = src_dir / "labels"
     if not img_dir.is_dir():
@@ -34,30 +65,19 @@ def copy_images_labels(src_dir, dst_dir, prefix, class_map=None):
         if img_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
             continue
 
-        # Copy image
         dst_img = dst_dir / "images" / f"{prefix}_{img_path.name}"
         shutil.copy2(img_path, dst_img)
 
-        # Process labels
         lbl_path = lbl_dir / (img_path.stem + ".txt")
         new_lines = []
         if lbl_path.exists():
             with open(lbl_path) as f:
                 for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    parts = line.split()
-                    if len(parts) < 5:
-                        continue
-                    cls_id = int(parts[0])
-                    if class_map is not None:
-                        if cls_id not in class_map:
-                            continue
-                        cls_id = class_map[cls_id]
-                    parts[0] = str(cls_id)
-                    new_lines.append(" ".join(parts))
-                    class_counts[cls_id] = class_counts.get(cls_id, 0) + 1
+                    bbox_line = to_bbox_line(line, class_map)
+                    if bbox_line is not None:
+                        new_lines.append(bbox_line)
+                        cls_id = int(bbox_line.split()[0])
+                        class_counts[cls_id] = class_counts.get(cls_id, 0) + 1
 
         dst_lbl = dst_dir / "labels" / f"{prefix}_{img_path.stem}.txt"
         dst_lbl.write_text("\n".join(new_lines) + "\n" if new_lines else "")
