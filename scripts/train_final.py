@@ -53,15 +53,17 @@ def main():
 
     model = YOLO("yolo11s.pt")
 
-    # W&B — tylko jeśli klucz API dostępny
-    if "WANDB_API_KEY" in os.environ:
+    # W&B — tylko jeśli klucz API jest ważny
+    if "WANDB_API_KEY" in os.environ and os.environ["WANDB_API_KEY"]:
         try:
             import wandb
             wandb.init(project="floor-plan-detection", name=RUN_NAME)
             print(f"[W&B] Logging enabled: floor-plan-detection/{RUN_NAME}")
-        except ImportError:
-            print("[W&B] wandb not installed, skipping")
+        except Exception as e:
+            os.environ["WANDB_MODE"] = "disabled"
+            print(f"[W&B] Init failed ({e}), logging disabled")
     else:
+        os.environ["WANDB_MODE"] = "disabled"
         print("[W&B] WANDB_API_KEY not set, skipping")
 
     model.train(
