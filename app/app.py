@@ -9,6 +9,8 @@ import io
 import os
 from pathlib import Path
 
+from wall_postprocessor import process_walls
+
 import numpy as np
 from flask import Flask, render_template, request, jsonify
 from PIL import Image
@@ -74,7 +76,7 @@ def predict():
 
     results = model.predict(
         source=np.array(image),
-        imgsz=640,
+        imgsz=1024,
         conf=0.15,
         iou=0.5,
         device=0,
@@ -112,10 +114,13 @@ def predict():
                 "class": results.names[int(cls_id)],
             })
 
+    vector_walls = process_walls(detections)
+
     return jsonify({
         "image_w": img_w,
         "image_h": img_h,
         "detections": detections,
+        "vector_walls": vector_walls,
     })
 
 

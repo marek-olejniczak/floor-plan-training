@@ -141,6 +141,18 @@ h1 { font-size: 1.8rem; color: #2ecc71; margin-bottom: 0.3rem; }
   position: relative;
   display: inline-block;
 }
+.canvas-row {
+  margin-bottom: 1.5rem;
+}
+.canvas-row:last-child {
+  margin-bottom: 0;
+}
+.canvas-label {
+  font-size: 0.85rem;
+  color: #888;
+  margin-bottom: 0.4rem;
+  padding-left: 0.2rem;
+}
 canvas {
   display: block;
 }

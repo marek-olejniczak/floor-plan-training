@@ -36,9 +36,18 @@
   </div>
 
   <div class="canvas-wrapper" id="canvasWrapper" hidden>
-    <div class="canvas-container">
-      <img id="sourceImage" style="display:none">
-      <canvas id="mainCanvas"></canvas>
+    <div class="canvas-row">
+      <div class="canvas-label">Wykryte ściany (YOLO)</div>
+      <div class="canvas-container">
+        <img id="sourceImage" style="display:none">
+        <canvas id="mainCanvas"></canvas>
+      </div>
+    </div>
+    <div class="canvas-row">
+      <div class="canvas-label">Wektory po obróbce</div>
+      <div class="canvas-container">
+        <canvas id="vectorCanvas"></canvas>
+      </div>
     </div>
   </div>
 
@@ -56,6 +65,7 @@ const fileInput = document.getElementById('fileInput');
 const canvasWrapper = document.getElementById('canvasWrapper');
 const mainCanvas = document.getElementById('mainCanvas');
 const sourceImage = document.getElementById('sourceImage');
+const vectorCanvas = document.getElementById('vectorCanvas');
 const loading = document.getElementById('loading');
 const error = document.getElementById('error');
 const controls = document.getElementById('controls');
@@ -76,6 +86,7 @@ const CLASS_COLORS = {
 const FALLBACK_COLOR = { stroke: '#e74c3c', fill: 'rgba(231, 76, 60, 0.25)' };
 
 let rawDetections = [];
+let vectorWallsData = null;
 let currentImageData = null;
 
 // Zoom & pan state
@@ -135,6 +146,8 @@ function setupCanvas(img) {
   const maxH = Math.min(img.naturalHeight, 900);
   mainCanvas.width = maxW;
   mainCanvas.height = maxH;
+  vectorCanvas.width = maxW;
+  vectorCanvas.height = maxH;
   canvasWrapper.hidden = false;
 }
 
@@ -170,11 +183,13 @@ async function sendPrediction(imageData) {
     }
 
     rawDetections = data.detections;
+    vectorWallsData = data.vector_walls || null;
     controls.hidden = false;
     currentThreshold = parseFloat(confSlider.value);
     buildClassToggles();
     updateStats();
     render();
+    drawVectorWalls(currentThreshold);
   } catch (err) {
     showError('Blad polaczenia z serwerem: ' + err.message);
   } finally {
@@ -341,6 +356,52 @@ function render() {
   updatePerClass(filtered);
 }
 
+// --- Rysowanie wektorów na dolnym canvasie ---
+
+function drawVectorWalls(threshold) {
+  const ctx = vectorCanvas.getContext('2d');
+  const img = sourceImage;
+  const scaleX = mainCanvas.width / img.naturalWidth;
+  const scaleY = mainCanvas.height / img.naturalHeight;
+
+  ctx.clearRect(0, 0, vectorCanvas.width, vectorCanvas.height);
+
+  if (!vectorWallsData) return;
+
+  const hWalls = (vectorWallsData.horizontal || []).filter(w => w.confidence >= threshold);
+  const vWalls = (vectorWallsData.vertical || []).filter(w => w.confidence >= threshold);
+
+  for (const wall of hWalls) {
+    const x1 = wall.x1 * scaleX;
+    const x2 = wall.x2 * scaleX;
+    const yc = wall.y_center * scaleY;
+    const th = wall.thickness * scaleY;
+    const w = x2 - x1;
+    const h = th;
+
+    ctx.fillStyle = 'rgba(0, 188, 212, 0.3)';
+    ctx.fillRect(x1, yc - h / 2, w, h);
+    ctx.strokeStyle = '#00bcd4';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x1, yc - h / 2, w, h);
+  }
+
+  for (const wall of vWalls) {
+    const y1 = wall.y1 * scaleY;
+    const y2 = wall.y2 * scaleY;
+    const xc = wall.x_center * scaleX;
+    const th = wall.thickness * scaleX;
+    const w = th;
+    const h = y2 - y1;
+
+    ctx.fillStyle = 'rgba(0, 188, 212, 0.3)';
+    ctx.fillRect(xc - w / 2, y1, w, h);
+    ctx.strokeStyle = '#00bcd4';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(xc - w / 2, y1, w, h);
+  }
+}
+
 // --- Statystyki ---
 function updateStats() {
   const confs = rawDetections.map(d => d.confidence);
@@ -367,7 +428,10 @@ function updatePerClass(detections) {
 confSlider.addEventListener('input', function() {
   confValue.textContent = parseFloat(this.value).toFixed(2);
   currentThreshold = parseFloat(this.value);
-  if (rawDetections.length) render();
+  if (rawDetections.length) {
+    render();
+    drawVectorWalls(currentThreshold);
+  }
 });
 
 // --- Obsluga bledow ---
