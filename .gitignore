@@ -10,3 +10,11 @@ merged_dataset/
 *.Zone.Identifier
 wandb/
 .env
+*.pt
+app/models/
+experiments/*/runs/
+*.png
+*.jpg
+*.zip
+scripts/old/
+scripts/vis/
