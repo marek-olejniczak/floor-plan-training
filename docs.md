@@ -170,9 +170,41 @@ Porównanie final_v1 przy imgsz=640 vs imgsz=1024:
 wzrostu mAP50. imgsz=1024 jest rekomendowane pomimo wyższych wymagań
 obliczeniowych.
 
+### 4.5 Ablation study: pseudo-labeling vs surowe dane
+
+Porównanie final_v1 (combined_dataset z pseudo-labelingiem) z raw_3class
+(walls_doors_windows d1+d2, bez pseudo-labelingu) na tym samym zbiorze
+testowym. Oba modele trenowane identycznymi hiperparametrami.
+
+| Klasa | final_v1 | raw_3class | Różnica | Korzyść pseudo-labelingu |
+|-------|:--------:|:----------:|:-------:|:------------------------:|
+| **wall** mAP50 | **77.06%** | 75.12% | **+1.94pp** | ✅ |
+| **door** mAP50 | 79.98% | **84.75%** | -4.77pp | ❌ |
+| **window** mAP50 | 88.13% | **89.29%** | -1.17pp | ❌ |
+
+**Wniosek:** pseudo-labeling pomógł wyłącznie na ścianach (+2pp),
+ale zaszkodził na drzwiach i oknach. Model `doors_windows_v2` użyty
+do generowania pseudo-etykiet wprowadzał szum, który obniżył jakość
+detekcji tych klas. Więcej danych ≠ lepiej, jeśli dane są zaszumione.
+**raw_3class** na czystych, oryginalnych adnotacjach Roboflow okazał się
+lepszym modelem dla drzwi i okien.
+
 ---
 
-## 5. Skrypty pipeline'u
+## 5. Wytrenowane modele (weights/)
+
+Wszystkie wagi dostępne w katalogu `weights/` na GitHub:
+
+| Plik | Model | Zbiór treningowy | Wielkość |
+|------|-------|-----------------|:--------:|
+| `final_v1.pt` | YOLO11s detect, 3 klasy | combined_dataset (z pseudo-labelingiem) | 19 MB |
+| `final_v2.pt` | YOLO11s detect, 3 klasy | fine-tune final_v1 | 19 MB |
+| `raw_3class.pt` | YOLO11s detect, 3 klasy | walls_doors_windows d1+d2 (surowe) | 19 MB |
+| `doors_windows_v2.pt` | YOLO11s detect, 2 klasy | merged_doors_windows | 19 MB |
+| `walls_v1.pt` | YOLO11s detect, 1 klasa | walls_only (podejście dwumodelowe) | 19 MB |
+| `train_full_obb.pt` | YOLO11s-OBB, 1 klasa | merged OBB walls | 19 MB |
+
+## 6. Skrypty pipeline'u
 
 | Skrypt | Opis |
 |--------|------|

@@ -39,7 +39,8 @@ uv run python scripts/train_final.py
 ├── experiments/
 │   ├── two_model/              # Podejście dwumodelowe
 │   └── compare/                # Ewaluacja + wizualizacja porównawcza
-├── runs/                       # Wytrenowane modele (gitignored)
+├── weights/                    # Wytrenowane wagi (na GitHub)
+├── runs/                       # Logi treningów (gitignored)
 ├── .env.example                # Konfiguracja W&B
 ├── pyproject.toml              # Zależności
 └── uv.lock
@@ -47,12 +48,17 @@ uv run python scripts/train_final.py
 
 ## Modele
 
+Wszystkie wagi dostępne w `weights/` na GitHub.
+
 | Model | Opis | mAP50 (wall) | mAP50 (door) | mAP50 (window) |
 |-------|------|:---:|:---:|:---:|
-| **final_v1** | 3 klasy, 50 epoch, imgsz=1024 | 77.1% | 80.0% | 88.1% |
+| **final_v1** | 3 klasy, 50 epoch, imgsz=1024 | **77.1%** | **80.0%** | **88.1%** |
 | final_v2 | Fine-tune final_v1 +50 epoch | 78.2% | 79.0% | 88.3% |
+| raw_3class | 3 klasy, surowe dane (ablation) | 75.1% | 84.8% | 89.3% |
+| doors_windows_v2 | 2 klasy: door, window (pośredni) | — | — | — |
+| walls_v1 | 1 klasa: wall (dwumodelowy) | 76.6% | — | — |
 
-final_v1 pozostaje rekomendowany — lepszy kompromis między klasami.
+final_v1 rekomendowany jako domyślny.
 
 ## Dane
 
