@@ -59,11 +59,3 @@ Wszystkie wagi dostępne w `weights/` na GitHub.
 | walls_v1 | 1 klasa: wall (dwumodelowy) | 76.6% | — | — |
 
 final_v1 rekomendowany jako domyślny.
-
-## Dane
-
-Szczegółowy opis źródła danych i pipeline'u przetwarzania → [docs.md](docs.md)
-
-## W&B
-
-Metryki treningowe: [floor-plan-detection](https://wandb.ai/marek-olejniczak-cad-projekt-cad-projekt-k-a/floor-plan-detection)

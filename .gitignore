@@ -20,3 +20,4 @@ experiments/*/runs/
 *.zip
 scripts/old/
 scripts/vis/
+*.sh
