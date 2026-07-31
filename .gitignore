@@ -9,6 +9,7 @@ thumbs.db
 datasetYOLOv8obb/
 merged_dataset/
 *.Zone.Identifier
+*:Zone.Identifier
 wandb/
 .env
 *.pt
